@@ -1,128 +1,145 @@
-import "./styles.css";
+import { useMemo, useState } from "react";
+import { StoreProvider, useStore } from "./store";
+import { TEAMS } from "./data/seed";
+import { MeasureForm } from "./components/MeasureForm";
+import { ComponentList } from "./components/ComponentList";
+import { MeasurementsTable } from "./components/MeasurementsTable";
+import { DiseaseMap } from "./components/DiseaseMap";
+import { RelationView } from "./components/RelationView";
+import { SyncCenter } from "./components/SyncCenter";
+import { HistoryPanel } from "./components/HistoryPanel";
+import { Pill } from "./components/ui";
 
-const project = {
-  "sourceNo": 8,
-  "id": "hxyfront-62013",
-  "port": 62013,
-  "title": "木结构榫卯构件测绘",
-  "domain": "古建木结构",
-  "prompt": "开发一个古建筑木结构榫卯构件测绘前端项目，测绘人员可以录入建筑名称、构件编号、木材种类、榫卯类型、截面尺寸、病害位置、变形情况和修缮建议。页面需要有构件清单、榫卯类型筛选、尺寸记录表、病害标记图和单栋建筑的构件关系视图。",
-  "palette": [
-    "#854d0e",
-    "#475569",
-    "#0f766e"
-  ],
-  "metrics": [
-    "构件数量",
-    "病害点",
-    "榫卯类型",
-    "待修缮"
-  ],
-  "filters": [
-    "燕尾榫",
-    "透榫",
-    "半榫",
-    "箍头榫"
-  ],
-  "fields": [
-    "建筑名称",
-    "构件编号",
-    "木材种类",
-    "榫卯类型",
-    "截面尺寸",
-    "修缮建议"
-  ],
-  "records": [
-    [
-      "梁架A-03",
-      "透榫",
-      "截面180x240mm",
-      "端部开裂"
-    ],
-    [
-      "柱网C-12",
-      "楠木",
-      "柱脚糟朽",
-      "建议局部墩接"
-    ],
-    [
-      "斗拱D-07",
-      "半榫",
-      "轻微变形",
-      "继续监测"
-    ]
-  ]
-};
+const TABS = [
+  { id: "measure", label: "现场测量" },
+  { id: "components", label: "构件清单" },
+  { id: "dimensions", label: "尺寸记录表" },
+  { id: "disease", label: "病害标记图" },
+  { id: "relations", label: "关系视图" },
+  { id: "sync", label: "同步中心" },
+  { id: "history", label: "履历留档" },
+] as const;
 
-function App() {
+type TabId = (typeof TABS)[number]["id"];
+
+function TopBar() {
+  const { state, dispatch } = useStore();
+  const pendingDrafts = state.local.drafts.filter((d) => d.state === "pending").length;
+  const failed = Object.values(state.local.batches).filter((b) => b.status === "failed").length;
+  const pendingReviews = state.reviews.filter((r) => r.status === "pending").length;
+
   return (
-    <main className="app">
-      <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
-      </section>
+    <header className="topbar">
+      <div className="brand">
+        <span className="logo">卯</span>
+        <div>
+          <h1>古建木结构 · 离线测绘台</h1>
+          <small>本地草稿接续 · 差异合并审核 · 榫卯关系重算 · 批次断点续传</small>
+        </div>
+      </div>
+      <div className="top-controls">
+        <label className="team-select">
+          当班测绘队
+          <select value={state.activeTeam} onChange={(e) => dispatch({ type: "setTeam", team: e.target.value })}>
+            {TEAMS.map((t) => (
+              <option key={t}>{t}</option>
+            ))}
+          </select>
+        </label>
+        <button className={state.online ? "net-btn online" : "net-btn offline"} onClick={() => dispatch({ type: "toggleOnline" })}>
+          <i />
+          {state.online ? "在线" : "断网"}
+        </button>
+        <div className="top-badges">
+          <Pill tone={pendingDrafts ? "warn" : "neutral"}>待合并 {pendingDrafts}</Pill>
+          <Pill tone={failed ? "bad" : "neutral"}>失败批次 {failed}</Pill>
+          <Pill tone={pendingReviews ? "bad" : "neutral"}>待审关系 {pendingReviews}</Pill>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Notices() {
+  const { state, dispatch } = useStore();
+  if (state.notices.length === 0) return null;
+  return (
+    <div className="notices">
+      {state.notices.map((n) => (
+        <div key={n.id} className={`notice notice-${n.kind}`}>
+          <span>{n.text}</span>
+          <button onClick={() => dispatch({ type: "dismissNotice", id: n.id })}>×</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Shell() {
+  const { state } = useStore();
+  const [tab, setTab] = useState<TabId>("measure");
+
+  const metrics = useMemo(() => {
+    const comps = Object.values(state.server.components);
+    return [
+      { label: "构件数量", value: comps.length },
+      { label: "病害点", value: comps.filter((c) => c.diseaseLocation && c.diseaseLocation !== "无").length },
+      { label: "榫卯类型", value: new Set(comps.map((c) => c.jointType)).size },
+      { label: "待修缮", value: comps.filter((c) => /建议|更换|墩接|加固|归安|铁箍/.test(c.repairSuggestion)).length },
+      { label: "本地草稿", value: state.local.drafts.filter((d) => d.state === "pending").length },
+      { label: "入库测量", value: state.server.measurements.length },
+    ];
+  }, [state]);
+
+  return (
+    <div className="app">
+      <TopBar />
+      <Notices />
 
       <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[28, 6, 14, 91][index] ?? 10}</strong>
+        {metrics.map((m) => (
+          <article key={m.label}>
+            <small>{m.label}</small>
+            <strong>{m.value}</strong>
           </article>
         ))}
       </section>
 
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}分类</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
+      <nav className="tabs">
+        {TABS.map((t) => (
+          <button key={t.id} className={tab === t.id ? "tab active" : "tab"} onClick={() => setTab(t.id)}>
+            {t.label}
+            {t.id === "sync" && state.merge && <i className="tab-dot" />}
+          </button>
+        ))}
+      </nav>
 
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
-            </div>
-            <button className="primary">保存记录</button>
+      <main className="tab-body">
+        {tab === "measure" && (
+          <div className="stack">
+            <MeasureForm />
+            <MeasurementsTable />
           </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
+        )}
+        {tab === "components" && <ComponentList />}
+        {tab === "dimensions" && <MeasurementsTable />}
+        {tab === "disease" && <DiseaseMap />}
+        {tab === "relations" && <RelationView />}
+        {tab === "sync" && <SyncCenter />}
+        {tab === "history" && <HistoryPanel />}
+      </main>
 
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>近期记录</p>
-            <h2>工作台摘要</h2>
-          </div>
-          <button>导出CSV</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-    </main>
+      <footer className="foot">
+        数据保存在本机浏览器（localStorage），断网可继续录入；刷新/重开页面后草稿、批次断点与未决合并均保留。
+      </footer>
+    </div>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <StoreProvider>
+      <Shell />
+    </StoreProvider>
+  );
+}
