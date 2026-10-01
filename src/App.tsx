@@ -1,128 +1,98 @@
-import "./styles.css";
+import { useState, type ReactNode } from "react";
+import { StoreProvider, useStore } from "./store";
+import TopBar from "./components/TopBar";
+import MetricsBar from "./components/MetricsBar";
+import EntryForm from "./components/EntryForm";
+import ComponentList from "./components/ComponentList";
+import DiseaseMap from "./components/DiseaseMap";
+import RelationshipView from "./components/RelationshipView";
+import MergeCenter from "./components/MergeCenter";
+import UploadQueue from "./components/UploadQueue";
+import Archive from "./components/Archive";
+import LogPanel from "./components/LogPanel";
 
-const project = {
-  "sourceNo": 8,
-  "id": "hxyfront-62013",
-  "port": 62013,
-  "title": "木结构榫卯构件测绘",
-  "domain": "古建木结构",
-  "prompt": "开发一个古建筑木结构榫卯构件测绘前端项目，测绘人员可以录入建筑名称、构件编号、木材种类、榫卯类型、截面尺寸、病害位置、变形情况和修缮建议。页面需要有构件清单、榫卯类型筛选、尺寸记录表、病害标记图和单栋建筑的构件关系视图。",
-  "palette": [
-    "#854d0e",
-    "#475569",
-    "#0f766e"
-  ],
-  "metrics": [
-    "构件数量",
-    "病害点",
-    "榫卯类型",
-    "待修缮"
-  ],
-  "filters": [
-    "燕尾榫",
-    "透榫",
-    "半榫",
-    "箍头榫"
-  ],
-  "fields": [
-    "建筑名称",
-    "构件编号",
-    "木材种类",
-    "榫卯类型",
-    "截面尺寸",
-    "修缮建议"
-  ],
-  "records": [
-    [
-      "梁架A-03",
-      "透榫",
-      "截面180x240mm",
-      "端部开裂"
-    ],
-    [
-      "柱网C-12",
-      "楠木",
-      "柱脚糟朽",
-      "建议局部墩接"
-    ],
-    [
-      "斗拱D-07",
-      "半榫",
-      "轻微变形",
-      "继续监测"
-    ]
-  ]
+type Tab = {
+  key: string;
+  label: string;
+  badge?: number;
+  badgeCls?: string;
+  render: () => ReactNode;
 };
 
-function App() {
+function Workbench() {
+  const { conflicts, reviewIds, batches, online, runMerge } = useStore();
+  const [tab, setTab] = useState("entry");
+
+  const failed = batches.filter((b) => b.status === "failed" || b.status === "partial").length;
+
+  const tabs: Tab[] = [
+    { key: "entry", label: "测绘录入", render: () => <EntryForm /> },
+    { key: "list", label: "构件清单", render: () => <ComponentList /> },
+    { key: "disease", label: "病害标记图", render: () => <DiseaseMap /> },
+    {
+      key: "relation",
+      label: "关系视图",
+      badge: reviewIds.length,
+      badgeCls: "bad",
+      render: () => <RelationshipView />,
+    },
+    {
+      key: "merge",
+      label: "合并差异",
+      badge: conflicts.length,
+      badgeCls: conflicts.length ? "warn" : undefined,
+      render: () => <MergeCenter />,
+    },
+    {
+      key: "upload",
+      label: "上传队列",
+      badge: failed,
+      badgeCls: "bad",
+      render: () => <UploadQueue />,
+    },
+    { key: "archive", label: "草稿档案", render: () => <Archive /> },
+  ];
+
   return (
     <main className="app">
-      <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
-      </section>
+      <TopBar />
+      <MetricsBar />
 
-      <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[28, 6, 14, 91][index] ?? 10}</strong>
-          </article>
+      <nav className="tabs">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            className={tab === t.key ? "active" : ""}
+            onClick={() => {
+              setTab(t.key);
+              if (t.key === "merge" && online) runMerge();
+            }}
+          >
+            {t.label}
+            {typeof t.badge === "number" && t.badge > 0 && (
+              <span className={`tab-badge ${t.badgeCls ?? ""}`}>{t.badge}</span>
+            )}
+          </button>
         ))}
-      </section>
+      </nav>
 
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}分类</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
+      <div className="tab-body">{tabs.find((t) => t.key === tab)?.render()}</div>
 
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
-            </div>
-            <button className="primary">保存记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
+      <LogPanel />
 
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>近期记录</p>
-            <h2>工作台摘要</h2>
-          </div>
-          <button>导出CSV</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <footer className="foot">
+        <p>
+          离线接续测绘台 · 草稿本地持久化（localStorage）· 差异字段级合并 · 关系失效重算与审核 · 批次断点续传与幂等去重 · 老草稿补版可查
+        </p>
+      </footer>
     </main>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <StoreProvider>
+      <Workbench />
+    </StoreProvider>
+  );
+}
